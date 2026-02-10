@@ -1,0 +1,58 @@
+# LDA Python Checkpointing Kernel Project
+
+I want to develop a checkpoining Python kernel, mainly geared at executing Jupyter Python notebooks. 
+
+## Kernel Basics
+
+The kernel will store states, where a state is a snapshot of the execution environment, including among others: 
+
+* Timestamp when the state was created
+* Variables
+* Imported modules
+
+States are immutable.  They are not modified; however, new states can be created from existing states by executing code in that state. 
+
+The kernel should be able to store multiple states, in the form of a dictionary mapping state names to their content. 
+The main methods that the kernel should implement are: 
+
+* `execute(code: str, exec_id: str, state_name: str, new_state_name: Optional[str] = None): dict`: Executes the given code in the specified state. `exec_id` is a unique ID for this execution.  If `new_state_name` is provided, the resulting state after execution will be stored under that name. Otherwise, the resulting state will be stored under a new randomly generated unique name. The output of the execution should be a dictionary including at least: 
+    * `output`: The output of the execution, if any, as a list in the same format as the output of a Jupyter notebook cell execution.
+    * `state_name`: The name of the state after execution.
+    * `error`: Any error that occurred during execution, if applicable.
+
+* `get_state(state_name: str) -> dict`: Retrieves the state associated with the given name. The state should include all variables and imported modules at that point in execution.
+
+* `list_states() -> List[str]`: Returns a list of all state names currently stored in the kernel.
+
+* `delete_state(state_name: str)`: Deletes the state associated with the given name from the kernel.
+
+* `reset()`: Resets the kernel by clearing all stored states and returning to an initial empty state.
+
+* `interrupt(exec_id: str)`: Interrupts the execution associated with the given `exec_id`. This should stop the execution of the code and return an appropriate response indicating that the execution was interrupted.
+
+## Implementation Details
+
+The kernel should be written in Python.  The Python code should be: 
+* Indented with 4-space indentation
+* Type hints not necessary
+* Docstrings should be included. 
+
+Try to use the simplest code, using as few external (imported) modules as possible. 
+
+The kernel execution itself should be separate from the server code described below, so at least a couple of Python files are necessary, a `main.py` for the bottle server, and a `kernel.py` for the kernel implementation. 
+
+Try to keep the implementation organized in a clean class structure. 
+
+You should format this as a Python package, with a `lda_kernel` directory containing the `__init__.py`, `kernel.py`, and `main.py` files, and a `pyproject.toml` file for installing the package at top level. 
+
+## Communication with the Kernel
+
+Communication with the kernel will occur over a rest API using HTTP requests, and the bottle.py web server, using cheroot as the WSGI server to enable multi-threading.  The multithreading is necessary to allow for interrupting long-running executions.  Note that we are also not ruling out the possibility of computing multiple states in parallel, generating multiple output states from the same input state. 
+
+The bottle server should be launched with a command of the form: 
+
+```bash
+python -m bottle --bind <IP_ADDRESS>:8080 --token=<SECRET_TOKEN> main.py
+```
+
+where `kernel_server.py` is the file containing the implementation of the kernel and the bottle server, and SECRET_TOKEN is a token that should be specified as a URL parameter in every request for authentication. The server should listen for incoming HTTP requests and route them to the appropriate methods of the kernel based on the request path and method (e.g., POST for executing code, GET for retrieving states, etc.).
