@@ -1,5 +1,6 @@
 """Unit tests for LDAKernel — exercises the kernel class directly."""
 
+import base64
 import threading
 import time
 
@@ -209,3 +210,189 @@ def test_interrupt(kernel):
     assert result["error"] is not None
     assert result["error"]["ename"] == "KeyboardInterrupt"
     assert result["state_name"] is None
+
+
+# ------------------------------------------------------------------
+# Rich output capture
+# ------------------------------------------------------------------
+
+def test_rich_repr_html(kernel):
+    """An object with _repr_html_() produces text/html in execute_result."""
+    code = (
+        "class RichObj:\n"
+        "    def _repr_html_(self):\n"
+        "        return '<b>hello</b>'\n"
+        "    def __repr__(self):\n"
+        "        return 'RichObj()'\n"
+        "RichObj()"
+    )
+    result = kernel.execute(code, "e1", "initial")
+    assert result["error"] is None
+    expr_items = [o for o in result["output"] if o["output_type"] == "execute_result"]
+    assert len(expr_items) == 1
+    assert expr_items[0]["data"]["text/html"] == "<b>hello</b>"
+    assert expr_items[0]["data"]["text/plain"] == "RichObj()"
+
+
+def test_rich_repr_png(kernel):
+    """An object with _repr_png_() returns base64-encoded image/png."""
+    code = (
+        "import base64\n"
+        "class PngObj:\n"
+        "    def _repr_png_(self):\n"
+        "        return b'\\x89PNG_fake'\n"
+        "    def __repr__(self):\n"
+        "        return 'PngObj()'\n"
+        "PngObj()"
+    )
+    result = kernel.execute(code, "e1", "initial")
+    assert result["error"] is None
+    expr_items = [o for o in result["output"] if o["output_type"] == "execute_result"]
+    assert len(expr_items) == 1
+    png_data = expr_items[0]["data"]["image/png"]
+    # Verify it is valid base64 that decodes to our bytes.
+    assert base64.b64decode(png_data) == b"\x89PNG_fake"
+
+
+def test_repr_html_returns_none(kernel):
+    """If _repr_html_() returns None, text/html should not appear in data."""
+    code = (
+        "class NoneHtml:\n"
+        "    def _repr_html_(self):\n"
+        "        return None\n"
+        "    def __repr__(self):\n"
+        "        return 'NoneHtml()'\n"
+        "NoneHtml()"
+    )
+    result = kernel.execute(code, "e1", "initial")
+    assert result["error"] is None
+    expr_items = [o for o in result["output"] if o["output_type"] == "execute_result"]
+    assert len(expr_items) == 1
+    assert "text/html" not in expr_items[0]["data"]
+    assert expr_items[0]["data"]["text/plain"] == "NoneHtml()"
+
+
+def test_repr_mimebundle(kernel):
+    """_repr_mimebundle_() returning a dict populates data correctly."""
+    code = (
+        "class BundleObj:\n"
+        "    def _repr_mimebundle_(self):\n"
+        "        return {'text/html': '<i>bundle</i>', 'text/plain': 'bundle'}\n"
+        "    def __repr__(self):\n"
+        "        return 'BundleObj()'\n"
+        "BundleObj()"
+    )
+    result = kernel.execute(code, "e1", "initial")
+    assert result["error"] is None
+    expr_items = [o for o in result["output"] if o["output_type"] == "execute_result"]
+    assert len(expr_items) == 1
+    assert expr_items[0]["data"]["text/html"] == "<i>bundle</i>"
+
+
+def test_repr_mimebundle_tuple(kernel):
+    """_repr_mimebundle_() returning (data, metadata) tuple."""
+    code = (
+        "class TupleBundle:\n"
+        "    def _repr_mimebundle_(self):\n"
+        "        return ({'text/html': '<em>t</em>'}, {'text/html': {'isolated': True}})\n"
+        "    def __repr__(self):\n"
+        "        return 'TupleBundle()'\n"
+        "TupleBundle()"
+    )
+    result = kernel.execute(code, "e1", "initial")
+    assert result["error"] is None
+    expr_items = [o for o in result["output"] if o["output_type"] == "execute_result"]
+    assert len(expr_items) == 1
+    assert expr_items[0]["data"]["text/html"] == "<em>t</em>"
+    assert expr_items[0]["metadata"]["text/html"] == {"isolated": True}
+
+
+def test_display_function(kernel):
+    """Calling display() inside code produces display_data output."""
+    code = (
+        "class Html:\n"
+        "    def _repr_html_(self):\n"
+        "        return '<p>hi</p>'\n"
+        "    def __repr__(self):\n"
+        "        return 'Html()'\n"
+        "display(Html())"
+    )
+    result = kernel.execute(code, "e1", "initial")
+    assert result["error"] is None
+    display_items = [o for o in result["output"] if o["output_type"] == "display_data"]
+    assert len(display_items) == 1
+    assert display_items[0]["data"]["text/html"] == "<p>hi</p>"
+    assert display_items[0]["data"]["text/plain"] == "Html()"
+
+
+def test_display_multiple_calls(kernel):
+    """Multiple display() calls produce multiple display_data entries."""
+    code = "display('first')\ndisplay('second')"
+    result = kernel.execute(code, "e1", "initial")
+    assert result["error"] is None
+    display_items = [o for o in result["output"] if o["output_type"] == "display_data"]
+    assert len(display_items) == 2
+    assert display_items[0]["data"]["text/plain"] == "'first'"
+    assert display_items[1]["data"]["text/plain"] == "'second'"
+
+
+def test_display_multiple_args(kernel):
+    """display('a', 'b') produces two display_data entries."""
+    code = "display('a', 'b')"
+    result = kernel.execute(code, "e1", "initial")
+    assert result["error"] is None
+    display_items = [o for o in result["output"] if o["output_type"] == "display_data"]
+    assert len(display_items) == 2
+    assert display_items[0]["data"]["text/plain"] == "'a'"
+    assert display_items[1]["data"]["text/plain"] == "'b'"
+
+
+def test_display_not_in_state(kernel):
+    """The injected display function must not persist in the saved state."""
+    result = kernel.execute("x = 1", "e1", "initial")
+    assert result["error"] is None
+    state = kernel.get_state(result["state_name"])
+    assert "display" not in state["variables"]
+
+
+def test_matplotlib_figure_capture(kernel):
+    """A matplotlib figure is captured as display_data with image/png."""
+    pytest.importorskip("matplotlib")
+    code = (
+        "import matplotlib\n"
+        "matplotlib.use('Agg')\n"
+        "import matplotlib.pyplot as plt\n"
+        "fig, ax = plt.subplots()\n"
+        "ax.plot([1, 2, 3])\n"
+    )
+    result = kernel.execute(code, "e1", "initial")
+    assert result["error"] is None
+    display_items = [o for o in result["output"] if o["output_type"] == "display_data"]
+    assert len(display_items) >= 1
+    png_item = display_items[0]
+    assert "image/png" in png_item["data"]
+    # Verify it's valid base64.
+    raw = base64.b64decode(png_item["data"]["image/png"])
+    assert raw[:4] == b"\x89PNG"
+
+
+def test_matplotlib_show_capture(kernel):
+    """plt.show() captures the current figure; a second figure is captured at end."""
+    pytest.importorskip("matplotlib")
+    code = (
+        "import matplotlib\n"
+        "matplotlib.use('Agg')\n"
+        "import matplotlib.pyplot as plt\n"
+        "plt.figure()\n"
+        "plt.plot([1, 2])\n"
+        "plt.show()\n"
+        "plt.figure()\n"
+        "plt.plot([3, 4])\n"
+    )
+    result = kernel.execute(code, "e1", "initial")
+    assert result["error"] is None
+    display_items = [o for o in result["output"] if o["output_type"] == "display_data"]
+    # First figure from plt.show(), second from end-of-cell capture.
+    assert len(display_items) >= 2
+    for item in display_items:
+        assert "image/png" in item["data"]
