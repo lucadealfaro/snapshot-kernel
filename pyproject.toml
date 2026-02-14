@@ -3,8 +3,12 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "lda-kernel"
+name = "snapshot-kernel"
 version = "0.1.0"
+description = "A snapshotting Python kernel with REST API"
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
+authors = [{name = "Luca de Alfaro", email = "dealfaro@acm.org"}]
 dependencies = ["bottle", "cheroot"]
 requires-python = ">=3.9"
 

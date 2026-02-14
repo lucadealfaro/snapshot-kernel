@@ -1,4 +1,4 @@
-"""LDA Checkpointing Python Kernel.
+"""Snapshot Checkpointing Python Kernel.
 
 Stores immutable execution states (snapshots of variables, modules, timestamps)
 and creates new states by executing code against existing ones.
@@ -210,7 +210,7 @@ def _capture_figures(collector):
     plt.close("all")
 
 
-class LDAKernel:
+class SnapshotKernel:
     """Checkpointing Python kernel that stores and forks execution states."""
 
     def __init__(self):

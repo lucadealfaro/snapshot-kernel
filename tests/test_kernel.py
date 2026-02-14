@@ -1,4 +1,4 @@
-"""Unit tests for LDAKernel — exercises the kernel class directly."""
+"""Unit tests for SnapshotKernel — exercises the kernel class directly."""
 
 import base64
 import threading
@@ -6,13 +6,13 @@ import time
 
 import pytest
 
-from lda_kernel.kernel import LDAKernel
+from snapshot_kernel.kernel import SnapshotKernel
 
 
 @pytest.fixture()
 def kernel():
     """Provide a fresh kernel for every test."""
-    k = LDAKernel()
+    k = SnapshotKernel()
     k.reset()
     return k
 

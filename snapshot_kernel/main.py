@@ -1,14 +1,14 @@
-"""Bottle REST API server for the LDA Checkpointing Kernel."""
+"""Bottle REST API server for the Snapshot Kernel."""
 
 import argparse
 import json
 
 import bottle
 
-from .kernel import LDAKernel
+from .kernel import SnapshotKernel
 
 app = bottle.Bottle()
-kernel = LDAKernel()
+kernel = SnapshotKernel()
 _token = None
 
 
@@ -83,7 +83,7 @@ def interrupt():
 
 def main():
     """Entry point: parse arguments and start the Cheroot-backed server."""
-    parser = argparse.ArgumentParser(description="LDA Kernel Server")
+    parser = argparse.ArgumentParser(description="Snapshot Kernel Server")
     parser.add_argument(
         "--bind", default="127.0.0.1:8080",
         help="Address to bind to (default: 127.0.0.1:8080)",

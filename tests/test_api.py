@@ -10,7 +10,7 @@ import urllib.request
 import pytest
 
 import bottle
-from lda_kernel import main as main_module
+from snapshot_kernel import main as main_module
 
 
 # ------------------------------------------------------------------

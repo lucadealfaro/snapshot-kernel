@@ -1,4 +1,4 @@
-# LDA Checkpointing Python Kernel - Implementation Plan
+# Snapshot Checkpointing Python Kernel - Implementation Plan
 
 ## Context
 
@@ -9,7 +9,7 @@ Build a checkpointing Python kernel from scratch (greenfield project — only `C
 ```
 ldakernel/
 ├── pyproject.toml
-└── lda_kernel/
+└── snapshot_kernel/
     ├── __init__.py
     ├── kernel.py      # Core kernel logic
     └── main.py        # Bottle REST API server
@@ -25,17 +25,17 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.backends._legacy:_Backend"
 
 [project]
-name = "lda-kernel"
+name = "snapshot-kernel"
 version = "0.1.0"
 dependencies = ["bottle", "cheroot"]
 requires-python = ">=3.9"
 ```
 
-## Step 2: Create `lda_kernel/__init__.py`
+## Step 2: Create `snapshot_kernel/__init__.py`
 
-Simple package marker, exports `LDAKernel`.
+Simple package marker, exports `SnapshotKernel`.
 
-## Step 3: Implement `lda_kernel/kernel.py`
+## Step 3: Implement `snapshot_kernel/kernel.py`
 
 This is the core file. All imports are from the standard library (`ast`, `copy`, `ctypes`, `datetime`, `io`, `sys`, `threading`, `traceback`, `types`, `uuid`).
 
@@ -50,10 +50,10 @@ This is the core file. All imports are from the standard library (`ast`, `copy`,
 Since cheroot runs multiple requests in parallel, `sys.stdout`/`sys.stderr` are process-global and must not be naively redirected. Solution:
 
 - **`ThreadSafeWriter` class**: Wraps the original `sys.stdout`/`sys.stderr`. Uses `threading.local()` to store per-thread `StringIO` buffers. If a buffer exists for the current thread, writes go there; otherwise, writes go to the original stream.
-- Installed once in `LDAKernel.__init__()` as replacements for `sys.stdout` and `sys.stderr`.
+- Installed once in `SnapshotKernel.__init__()` as replacements for `sys.stdout` and `sys.stderr`.
 - Each `execute()` call sets `_thread_local.buffer = StringIO()` before execution and reads it after.
 
-### LDAKernel class
+### SnapshotKernel class
 
 Fields:
 - `_states`: `dict[str, State]` — state storage
@@ -85,7 +85,7 @@ Methods:
 - Each execution runs in a cheroot worker thread — no need to spawn our own threads.
 - `ThreadSafeWriter` ensures stdout/stderr capture is isolated per thread.
 
-## Step 4: Implement `lda_kernel/main.py`
+## Step 4: Implement `snapshot_kernel/main.py`
 
 ### REST API routes
 
@@ -107,7 +107,7 @@ A `@app.hook('before_request')` checks the `token` URL parameter against the con
 Custom entry point with `argparse`:
 
 ```bash
-python -m lda_kernel.main --bind 0.0.0.0:8080 --token=SECRET
+python -m snapshot_kernel.main --bind 0.0.0.0:8080 --token=SECRET
 ```
 
 Parses `--bind` (default `127.0.0.1:8080`) and `--token` (required). Runs the Bottle app with `server='cheroot'`.
@@ -121,7 +121,7 @@ Parses `--bind` (default `127.0.0.1:8080`) and `--token` (required). Runs the Bo
 ## Verification
 
 1. Install the package: `pip install -e .`
-2. Start the server: `python -m lda_kernel.main --bind 127.0.0.1:8080 --token=test123`
+2. Start the server: `python -m snapshot_kernel.main --bind 127.0.0.1:8080 --token=test123`
 3. Test basic execution:
    ```bash
    curl -X POST 'http://127.0.0.1:8080/execute?token=test123' \

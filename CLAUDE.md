@@ -1,4 +1,4 @@
-# LDA Python Checkpointing Kernel Project
+# Snapshot Python Checkpointing Kernel Project
 
 I want to develop a checkpoining Python kernel, mainly geared at executing Jupyter Python notebooks. 
 
@@ -43,7 +43,7 @@ The kernel execution itself should be separate from the server code described be
 
 Try to keep the implementation organized in a clean class structure. 
 
-You should format this as a Python package, with a `lda_kernel` directory containing the `__init__.py`, `kernel.py`, and `main.py` files, and a `pyproject.toml` file for installing the package at top level. 
+You should format this as a Python package, with a `snapshot_kernel` directory containing the `__init__.py`, `kernel.py`, and `main.py` files, and a `pyproject.toml` file for installing the package at top level. 
 
 ## Output Format
 
