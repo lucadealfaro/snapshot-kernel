@@ -92,10 +92,27 @@ def main():
         "--token", required=True,
         help="Secret token for request authentication",
     )
+    parser.add_argument(
+        "--display-max-rows", type=int, default=200,
+        help="Max rows shown for Pandas/Polars DataFrames (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--display-max-columns", type=int, default=100,
+        help="Max columns shown for Pandas/Polars DataFrames (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--display-max-colwidth", type=int, default=128,
+        help="Max column width for Pandas/Polars DataFrames (default: %(default)s)",
+    )
     args = parser.parse_args()
 
-    global _token
+    global _token, kernel
     _token = args.token
+    kernel = SnapshotKernel(
+        display_max_rows=args.display_max_rows,
+        display_max_columns=args.display_max_columns,
+        display_max_colwidth=args.display_max_colwidth,
+    )
 
     host, port = args.bind.rsplit(":", 1)
     bottle.run(app, server="cheroot", host=host, port=int(port))

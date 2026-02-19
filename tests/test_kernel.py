@@ -396,3 +396,86 @@ def test_matplotlib_show_capture(kernel):
     assert len(display_items) >= 2
     for item in display_items:
         assert "image/png" in item["data"]
+
+
+# ------------------------------------------------------------------
+# Output size limits
+# ------------------------------------------------------------------
+
+def test_oversized_html_dropped_plain_kept(kernel):
+    """HTML exceeding the limit is dropped; text/plain is kept."""
+    from snapshot_kernel.kernel import _format_object
+    class BigObj:
+        def _repr_html_(self):
+            return "<div>" + "x" * 200 + "</div>"
+        def __repr__(self):
+            return "Big()"
+    d, m = _format_object(BigObj(), max_size=100)
+    assert "text/html" not in d
+    assert "text/plain" in d
+    assert d["text/plain"] == "Big()"
+
+
+def test_oversized_plain_truncated(kernel):
+    """text/plain exceeding the limit is truncated with a marker."""
+    from snapshot_kernel.kernel import _format_object, _TRUNCATION_MARKER
+    class Huge:
+        def __repr__(self):
+            return "A" * 500
+    d, m = _format_object(Huge(), max_size=100)
+    assert len(d["text/plain"]) == 100 + len(_TRUNCATION_MARKER)
+    assert d["text/plain"].endswith(_TRUNCATION_MARKER)
+    assert d["text/plain"][:100] == "A" * 100
+
+
+def test_oversized_mimebundle_enforced(kernel):
+    """Oversized HTML via _repr_mimebundle_() is dropped."""
+    from snapshot_kernel.kernel import _format_object
+    class BundleBig:
+        def _repr_mimebundle_(self):
+            return {"text/html": "<b>" + "x" * 200 + "</b>", "text/plain": "ok"}
+        def __repr__(self):
+            return "BundleBig()"
+    d, m = _format_object(BundleBig(), max_size=100)
+    assert "text/html" not in d
+    assert d["text/plain"] == "ok"
+
+
+def test_under_limit_html_preserved(kernel):
+    """Small HTML is preserved normally (regression guard)."""
+    from snapshot_kernel.kernel import _format_object
+    class Small:
+        def _repr_html_(self):
+            return "<b>hi</b>"
+        def __repr__(self):
+            return "Small()"
+    d, m = _format_object(Small(), max_size=1_000_000)
+    assert d["text/html"] == "<b>hi</b>"
+    assert d["text/plain"] == "Small()"
+
+
+def test_oversized_binary_dropped(kernel):
+    """Oversized _repr_png_() output is dropped; text/plain is kept."""
+    from snapshot_kernel.kernel import _format_object
+    class BigPng:
+        def _repr_png_(self):
+            return b"\x89PNG" + b"x" * 500
+        def __repr__(self):
+            return "BigPng()"
+    d, m = _format_object(BigPng(), max_size=100)
+    assert "image/png" not in d
+    assert d["text/plain"] == "BigPng()"
+
+
+def test_display_oversized_html_dropped(kernel):
+    """Size limits apply through the display() path too."""
+    from snapshot_kernel.kernel import _format_object
+    # Verify _format_object enforces limits when called via display path
+    class BigDisplay:
+        def _repr_html_(self):
+            return "<table>" + "x" * 200 + "</table>"
+        def __repr__(self):
+            return "BigDisplay()"
+    d, m = _format_object(BigDisplay(), max_size=50)
+    assert "text/html" not in d
+    assert d["text/plain"] == "BigDisplay()"

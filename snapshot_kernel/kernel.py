@@ -17,6 +17,10 @@ import traceback
 import types
 import uuid
 
+MAX_REPR_SIZE = 1_000_000  # 1 MB hard limit for any single MIME representation
+_TRUNCATION_MARKER = "\n... [truncated]"
+
+
 
 def _snapshot_namespace(namespace):
     """Create a snapshot of a namespace dict.
@@ -39,13 +43,70 @@ def _snapshot_namespace(namespace):
     return snapshot
 
 
-def _format_object(obj):
+def _configure_dataframe_display(max_rows, max_columns, max_colwidth):
+    """Reset Pandas/Polars display options so built-in truncation kicks in.
+
+    Only touches libraries that are already imported (avoids importing them).
+    """
+    pd = sys.modules.get("pandas")
+    if pd is not None:
+        pd.set_option("display.max_rows", max_rows)
+        pd.set_option("display.max_columns", max_columns)
+        pd.set_option("display.max_colwidth", max_colwidth)
+
+    pl = sys.modules.get("polars")
+    if pl is not None:
+        try:
+            cfg = pl.Config
+            cfg.set_tbl_rows(max_rows)
+            cfg.set_tbl_cols(max_columns)
+            cfg.set_fmt_str_lengths(max_colwidth)
+        except Exception:
+            pass
+
+
+# Rich MIME types that are dropped (not truncated) when oversized.
+_RICH_MIME_TYPES = frozenset({
+    "text/html", "text/markdown", "text/latex",
+    "image/svg+xml", "image/png", "image/jpeg",
+    "application/pdf", "application/json",
+})
+
+
+def _enforce_size_limits(data, metadata, max_size):
+    """Drop oversized rich representations; truncate text/plain.
+
+    Rich types (HTML, SVG, images, etc.) cannot be safely truncated, so
+    they are removed entirely when they exceed *max_size*.  ``text/plain``
+    is truncated with a marker appended.
+
+    Modifies *data* and *metadata* in place and returns them.
+    """
+    for mime in list(data):
+        content = data[mime]
+        size = len(content) if isinstance(content, str) else 0
+        if size > max_size:
+            if mime == "text/plain":
+                data[mime] = content[:max_size] + _TRUNCATION_MARKER
+            elif mime in _RICH_MIME_TYPES:
+                del data[mime]
+                metadata.pop(mime, None)
+    return data, metadata
+
+
+def _format_object(obj, max_size=None):
     """Extract all available rich representations from a Python object.
 
     Returns (data_dict, metadata_dict) where data_dict maps MIME types
     to their string content.  Binary representations (PNG, JPEG, PDF) are
     base64-encoded.
+
+    Representations larger than *max_size* bytes are dropped (rich types)
+    or truncated (text/plain).  Defaults to ``MAX_REPR_SIZE``.
     """
+    if max_size is None:
+        max_size = MAX_REPR_SIZE
+
     data = {}
     metadata = {}
 
@@ -66,7 +127,7 @@ def _format_object(obj):
                 metadata.update(bundle_meta)
             elif isinstance(result, dict):
                 data.update(result)
-            return data, metadata
+            return _enforce_size_limits(data, metadata, max_size)
         except Exception:
             pass
 
@@ -95,7 +156,7 @@ def _format_object(obj):
             result = base64.b64encode(result).decode("ascii")
         data[mime_type] = result
 
-    return data, metadata
+    return _enforce_size_limits(data, metadata, max_size)
 
 
 class State:
@@ -213,7 +274,11 @@ def _capture_figures(collector):
 class SnapshotKernel:
     """Checkpointing Python kernel that stores and forks execution states."""
 
-    def __init__(self):
+    def __init__(self, display_max_rows=200, display_max_columns=100,
+                 display_max_colwidth=128):
+        self._display_max_rows = display_max_rows
+        self._display_max_columns = display_max_columns
+        self._display_max_colwidth = display_max_colwidth
         self._states = {}
         self._lock = threading.Lock()
         self._executions = {}
@@ -332,6 +397,12 @@ class SnapshotKernel:
 
         # Ensure ThreadSafeWriter wrappers are in place.
         self._ensure_writers()
+
+        # Configure dataframe display limits before any formatting.
+        _configure_dataframe_display(
+            self._display_max_rows, self._display_max_columns,
+            self._display_max_colwidth,
+        )
 
         # Set up per-thread output capture.
         stdout_writer = sys.stdout
