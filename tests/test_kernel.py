@@ -479,3 +479,74 @@ def test_display_oversized_html_dropped(kernel):
     d, m = _format_object(BigDisplay(), max_size=50)
     assert "text/html" not in d
     assert d["text/plain"] == "BigDisplay()"
+
+
+# ------------------------------------------------------------------
+# multistate_execute
+# ------------------------------------------------------------------
+
+def test_multistate_basic(kernel):
+    """Access variables from two states via aliases."""
+    kernel.execute("x = 10", "e1", "initial", new_state_name="s1")
+    kernel.execute("y = 20", "e2", "initial", new_state_name="s2")
+
+    result = kernel.multistate_execute(
+        "a.x + b.y", "me1", {"a": "s1", "b": "s2"}
+    )
+    assert result["error"] is None
+    expr_items = [o for o in result["output"]
+                  if o["output_type"] == "execute_result"]
+    assert len(expr_items) == 1
+    assert expr_items[0]["data"]["text/plain"] == "30"
+
+
+def test_multistate_missing_state(kernel):
+    """Alias maps to a nonexistent state → StateNotFound."""
+    kernel.execute("x = 1", "e1", "initial", new_state_name="s1")
+
+    result = kernel.multistate_execute(
+        "a.x", "me1", {"a": "s1", "b": "no_such_state"}
+    )
+    assert result["error"] is not None
+    assert result["error"]["ename"] == "StateNotFound"
+    assert result["error"]["evalue"] == "no_such_state"
+    assert result["state_name"] is None
+
+
+def test_multistate_no_state_stored(kernel):
+    """multistate_execute does not create any new state."""
+    kernel.execute("x = 1", "e1", "initial", new_state_name="s1")
+    before = set(kernel.list_states())
+
+    result = kernel.multistate_execute("a.x", "me1", {"a": "s1"})
+    assert result["error"] is None
+    assert result["state_name"] is None
+
+    after = set(kernel.list_states())
+    assert before == after
+
+
+def test_multistate_stdout(kernel):
+    """print() captures stdout in multistate_execute."""
+    kernel.execute("x = 'hello'", "e1", "initial", new_state_name="s1")
+
+    result = kernel.multistate_execute(
+        "print(a.x)", "me1", {"a": "s1"}
+    )
+    assert result["error"] is None
+    stdout_items = [o for o in result["output"]
+                    if o["output_type"] == "stream" and o["name"] == "stdout"]
+    assert len(stdout_items) == 1
+    assert stdout_items[0]["text"] == "hello\n"
+
+
+def test_multistate_error(kernel):
+    """Runtime error in multistate_execute is reported."""
+    kernel.execute("x = 0", "e1", "initial", new_state_name="s1")
+
+    result = kernel.multistate_execute(
+        "1 / a.x", "me1", {"a": "s1"}
+    )
+    assert result["error"] is not None
+    assert result["error"]["ename"] == "ZeroDivisionError"
+    assert result["state_name"] is None

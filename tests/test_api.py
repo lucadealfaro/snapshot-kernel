@@ -227,3 +227,62 @@ def test_interrupt(server):
     assert body is not None, "Execution request did not finish"
     assert body["error"] is not None
     assert body["error"]["ename"] == "KeyboardInterrupt"
+
+
+# ------------------------------------------------------------------
+# multistate_execute
+# ------------------------------------------------------------------
+
+def test_multistate_execute_basic(server):
+    """POST /multistate_execute round trip: create states, access via aliases."""
+    _request(server, "POST", "/execute", {
+        "code": "x = 10",
+        "exec_id": "e1",
+        "state_name": "initial",
+        "new_state_name": "s1",
+    })
+    _request(server, "POST", "/execute", {
+        "code": "y = 20",
+        "exec_id": "e2",
+        "state_name": "initial",
+        "new_state_name": "s2",
+    })
+
+    status, body = _request(server, "POST", "/multistate_execute", {
+        "code": "a.x + b.y",
+        "exec_id": "me1",
+        "state_mapping": {"a": "s1", "b": "s2"},
+    })
+    assert status == 200
+    assert body["error"] is None
+    assert body["state_name"] is None
+    expr_items = [o for o in body["output"]
+                  if o["output_type"] == "execute_result"]
+    assert len(expr_items) == 1
+    assert expr_items[0]["data"]["text/plain"] == "30"
+
+
+def test_multistate_execute_missing_state(server):
+    """POST /multistate_execute with a nonexistent state returns StateNotFound."""
+    status, body = _request(server, "POST", "/multistate_execute", {
+        "code": "a.x",
+        "exec_id": "me1",
+        "state_mapping": {"a": "no_such_state"},
+    })
+    assert status == 200
+    assert body["error"] is not None
+    assert body["error"]["ename"] == "StateNotFound"
+
+
+def test_multistate_execute_missing_fields(server):
+    """POST /multistate_execute without required fields returns 400."""
+    status, _ = _request(server, "POST", "/multistate_execute", {
+        "code": "1",
+    })
+    assert status == 400
+
+    status, _ = _request(server, "POST", "/multistate_execute", {
+        "code": "1",
+        "exec_id": "me1",
+    })
+    assert status == 400

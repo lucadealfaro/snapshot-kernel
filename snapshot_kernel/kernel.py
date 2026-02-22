@@ -371,26 +371,12 @@ class SnapshotKernel:
         plt.show = _hooked_show
         return lambda: setattr(plt, "show", original_show)
 
-    def execute(self, code, exec_id, state_name, new_state_name=None):
-        """Execute code against a state and store the resulting state.
+    def _execute_in_namespace(self, code, exec_id, namespace):
+        """Execute code in the given namespace with full output capture.
 
-        Returns a dict with keys: output, state_name, error.
+        The namespace must already contain ``__builtins__``.
+        Returns a dict with keys: output, error, namespace.
         """
-        if new_state_name is None:
-            new_state_name = uuid.uuid4().hex
-
-        # Snapshot the source state's namespace.
-        with self._lock:
-            source = self._states.get(state_name)
-        if source is None:
-            return {
-                "output": [],
-                "state_name": None,
-                "error": {"ename": "StateNotFound", "evalue": state_name, "traceback": []},
-            }
-        namespace = _snapshot_namespace(source.namespace)
-        namespace["__builtins__"] = __builtins__
-
         # Register this execution for possible interruption.
         with self._exec_lock:
             self._executions[exec_id] = threading.current_thread().ident
@@ -504,19 +490,87 @@ class SnapshotKernel:
             with self._exec_lock:
                 self._executions.pop(exec_id, None)
 
+        return {
+            "output": output,
+            "error": error,
+            "namespace": namespace,
+        }
+
+    def execute(self, code, exec_id, state_name, new_state_name=None):
+        """Execute code against a state and store the resulting state.
+
+        Returns a dict with keys: output, state_name, error.
+        """
+        if new_state_name is None:
+            new_state_name = uuid.uuid4().hex
+
+        # Snapshot the source state's namespace.
+        with self._lock:
+            source = self._states.get(state_name)
+        if source is None:
+            return {
+                "output": [],
+                "state_name": None,
+                "error": {"ename": "StateNotFound", "evalue": state_name, "traceback": []},
+            }
+        namespace = _snapshot_namespace(source.namespace)
+        namespace["__builtins__"] = __builtins__
+
+        result = self._execute_in_namespace(code, exec_id, namespace)
+
         # On success, store the new state; on error, do not.
         result_state_name = None
-        if error is None:
-            new_ns = _snapshot_namespace(namespace)
+        if result["error"] is None:
+            new_ns = _snapshot_namespace(result["namespace"])
             new_state = State(new_state_name, new_ns)
             with self._lock:
                 self._states[new_state_name] = new_state
             result_state_name = new_state_name
 
         return {
-            "output": output,
+            "output": result["output"],
             "state_name": result_state_name,
-            "error": error,
+            "error": result["error"],
+        }
+
+    def multistate_execute(self, code, exec_id, state_mapping):
+        """Execute code with access to multiple states via attribute-access aliases.
+
+        *state_mapping* maps alias names to state names, e.g.
+        ``{"a": "state1", "b": "state2"}``.  Inside the executed code,
+        ``a.x`` accesses variable ``x`` from state1's namespace.
+
+        No new state is stored.
+        Returns a dict with keys: output, state_name (always None), error.
+        """
+        # Look up and snapshot all states under a single lock.
+        with self._lock:
+            aliases = {}
+            for alias, sname in state_mapping.items():
+                state = self._states.get(sname)
+                if state is None:
+                    return {
+                        "output": [],
+                        "state_name": None,
+                        "error": {
+                            "ename": "StateNotFound",
+                            "evalue": sname,
+                            "traceback": [],
+                        },
+                    }
+                aliases[alias] = types.SimpleNamespace(
+                    **_snapshot_namespace(state.namespace)
+                )
+
+        namespace = {"__builtins__": __builtins__}
+        namespace.update(aliases)
+
+        result = self._execute_in_namespace(code, exec_id, namespace)
+
+        return {
+            "output": result["output"],
+            "state_name": None,
+            "error": result["error"],
         }
 
     def interrupt(self, exec_id):

@@ -62,6 +62,24 @@ def delete_state(name):
     bottle.abort(404, "State not found.")
 
 
+@app.post("/multistate_execute")
+def multistate_execute():
+    """Execute code with access to multiple states."""
+    body = bottle.request.json
+    if not body:
+        bottle.abort(400, "Request body must be JSON.")
+    code = body.get("code", "")
+    exec_id = body.get("exec_id")
+    state_mapping = body.get("state_mapping")
+    if exec_id is None or state_mapping is None:
+        bottle.abort(400, "exec_id and state_mapping are required.")
+    if not isinstance(state_mapping, dict):
+        bottle.abort(400, "state_mapping must be a JSON object.")
+    result = kernel.multistate_execute(code, exec_id, state_mapping)
+    bottle.response.content_type = "application/json"
+    return json.dumps(result)
+
+
 @app.post("/reset")
 def reset():
     """Reset the kernel to its initial state."""
