@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "snapshot-kernel"
-version = "0.1.2"
+version = "0.1.3"
 description = "A snapshotting Python kernel with REST API"
 readme = "README.md"
 license = "BSD-3-Clause"

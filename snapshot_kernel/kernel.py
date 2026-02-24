@@ -16,6 +16,7 @@ import threading
 import traceback
 import types
 import uuid
+import warnings
 
 MAX_REPR_SIZE = 1_000_000  # 1 MB hard limit for any single MIME representation
 _TRUNCATION_MARKER = "\n... [truncated]"
@@ -286,6 +287,9 @@ class SnapshotKernel:
         self._io_lock = threading.Lock()
         self._display_collector = DisplayCollector()
         os.environ.setdefault("MPLBACKEND", "Agg")
+        warnings.filterwarnings(
+            "ignore", message=".*FigureCanvasAgg is non-interactive.*"
+        )
         self.reset()
 
     def _ensure_writers(self):
