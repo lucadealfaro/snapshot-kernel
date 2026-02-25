@@ -75,7 +75,9 @@ def multistate_execute():
         bottle.abort(400, "exec_id and state_mapping are required.")
     if not isinstance(state_mapping, dict):
         bottle.abort(400, "state_mapping must be a JSON object.")
-    result = kernel.multistate_execute(code, exec_id, state_mapping)
+    default_state = body.get("default_state")
+    result = kernel.multistate_execute(code, exec_id, state_mapping,
+                                       default_state=default_state)
     bottle.response.content_type = "application/json"
     return json.dumps(result)
 

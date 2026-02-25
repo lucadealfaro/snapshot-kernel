@@ -286,3 +286,31 @@ def test_multistate_execute_missing_fields(server):
         "exec_id": "me1",
     })
     assert status == 400
+
+
+def test_multistate_execute_default_state(server):
+    """POST /multistate_execute with default_state makes its vars directly accessible."""
+    _request(server, "POST", "/execute", {
+        "code": "x = 5",
+        "exec_id": "e1",
+        "state_name": "initial",
+        "new_state_name": "cur",
+    })
+    _request(server, "POST", "/execute", {
+        "code": "z = 100",
+        "exec_id": "e2",
+        "state_name": "initial",
+        "new_state_name": "other",
+    })
+
+    status, body = _request(server, "POST", "/multistate_execute", {
+        "code": "x + a.z",
+        "exec_id": "me1",
+        "state_mapping": {"a": "other"},
+        "default_state": "cur",
+    })
+    assert status == 200
+    assert body["error"] is None
+    expr_items = [o for o in body["output"]
+                  if o["output_type"] == "execute_result"]
+    assert expr_items[0]["data"]["text/plain"] == "105"

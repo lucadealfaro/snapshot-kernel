@@ -537,36 +537,55 @@ class SnapshotKernel:
             "error": result["error"],
         }
 
-    def multistate_execute(self, code, exec_id, state_mapping):
+    def multistate_execute(self, code, exec_id, state_mapping,
+                           default_state=None):
         """Execute code with access to multiple states via attribute-access aliases.
 
         *state_mapping* maps alias names to state names, e.g.
         ``{"a": "state1", "b": "state2"}``.  Inside the executed code,
         ``a.x`` accesses variable ``x`` from state1's namespace.
 
+        If *default_state* is given, its variables are placed directly in the
+        execution namespace so they can be accessed as plain names (e.g. ``x``
+        instead of ``alias.x``).
+
         No new state is stored.
         Returns a dict with keys: output, state_name (always None), error.
         """
+        _not_found = {"output": [], "state_name": None, "error": None}
+
         # Look up and snapshot all states under a single lock.
         with self._lock:
+            # default_state first — its variables go into the namespace directly.
+            default_ns = {}
+            if default_state is not None:
+                state = self._states.get(default_state)
+                if state is None:
+                    _not_found["error"] = {
+                        "ename": "StateNotFound",
+                        "evalue": default_state,
+                        "traceback": [],
+                    }
+                    return _not_found
+                default_ns = _snapshot_namespace(state.namespace)
+
             aliases = {}
             for alias, sname in state_mapping.items():
                 state = self._states.get(sname)
                 if state is None:
-                    return {
-                        "output": [],
-                        "state_name": None,
-                        "error": {
-                            "ename": "StateNotFound",
-                            "evalue": sname,
-                            "traceback": [],
-                        },
+                    _not_found["error"] = {
+                        "ename": "StateNotFound",
+                        "evalue": sname,
+                        "traceback": [],
                     }
+                    return _not_found
                 aliases[alias] = types.SimpleNamespace(
                     **_snapshot_namespace(state.namespace)
                 )
 
+        # default_state variables first, then aliases override on collision.
         namespace = {"__builtins__": __builtins__}
+        namespace.update(default_ns)
         namespace.update(aliases)
 
         result = self._execute_in_namespace(code, exec_id, namespace)

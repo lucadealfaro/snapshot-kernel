@@ -550,3 +550,27 @@ def test_multistate_error(kernel):
     assert result["error"] is not None
     assert result["error"]["ename"] == "ZeroDivisionError"
     assert result["state_name"] is None
+
+
+def test_multistate_default_state(kernel):
+    """default_state variables are accessible as plain names."""
+    kernel.execute("x = 5\ny = 10", "e1", "initial", new_state_name="cur")
+    kernel.execute("z = 100", "e2", "initial", new_state_name="other")
+
+    result = kernel.multistate_execute(
+        "x + y + a.z", "me1", {"a": "other"}, default_state="cur"
+    )
+    assert result["error"] is None
+    expr_items = [o for o in result["output"]
+                  if o["output_type"] == "execute_result"]
+    assert expr_items[0]["data"]["text/plain"] == "115"
+
+
+def test_multistate_default_state_missing(kernel):
+    """A nonexistent default_state returns StateNotFound."""
+    result = kernel.multistate_execute(
+        "1", "me1", {}, default_state="no_such"
+    )
+    assert result["error"] is not None
+    assert result["error"]["ename"] == "StateNotFound"
+    assert result["error"]["evalue"] == "no_such"
